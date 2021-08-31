@@ -237,6 +237,9 @@ public interface InventoryContents {
 
         private void update(int row, int column, ItemStack item) {
             Player currentPlayer = Bukkit.getPlayer(player);
+            if (currentPlayer == null)
+                return;
+
             if(!inv.getManager().getOpenedPlayers(inv).contains(currentPlayer))
                 return;
 
