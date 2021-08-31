@@ -18,7 +18,13 @@ public class ChestInventoryOpener implements InventoryOpener {
                 "The row count for the chest inventory must be between 1 and 6, found: %s", inv.getRows());
 
         InventoryManager manager = inv.getManager();
-        Inventory handle = Bukkit.createInventory(player, inv.getRows() * inv.getColumns(), inv.getTitle());
+
+        Inventory handle = null;
+        if (inv.getTitleComponent() != null) {
+            handle = Bukkit.createInventory(player, inv.getRows() * inv.getColumns(), inv.getTitleComponent());
+        } else {
+            handle = Bukkit.createInventory(player, inv.getRows() * inv.getColumns(), inv.getTitle());
+        }
 
         fill(handle, manager.getContents(player).get());
 

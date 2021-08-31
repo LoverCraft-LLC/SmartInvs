@@ -13,11 +13,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-@SuppressWarnings("unchecked")
+import net.kyori.adventure.text.Component;
+
 public class SmartInventory {
 
     private String id;
     private String title;
+    private Component titleComponent;
     private InventoryType type;
     private int rows, columns;
     private boolean closeable;
@@ -33,6 +35,8 @@ public class SmartInventory {
     }
 
     public Inventory open(Player player) { return open(player, 0); }
+
+    @SuppressWarnings("unchecked")
     public Inventory open(Player player, int page) {
         Optional<SmartInventory> oldInv = this.manager.getInventory(player);
 
@@ -86,6 +90,7 @@ public class SmartInventory {
 
     public String getId() { return id; }
     public String getTitle() { return title; }
+    public Component getTitleComponent() { return titleComponent; }
     public InventoryType getType() { return type; }
     public int getRows() { return rows; }
     public int getColumns() { return columns; }
@@ -106,6 +111,7 @@ public class SmartInventory {
 
         private String id = "unknown";
         private String title = "";
+        private Component titleComponent = null;
         private InventoryType type = InventoryType.CHEST;
         private int rows = 6, columns = 9;
         private boolean closeable = true;
@@ -125,6 +131,11 @@ public class SmartInventory {
 
         public Builder title(String title) {
             this.title = title;
+            return this;
+        }
+
+        public Builder title(Component title) {
+            this.titleComponent = title;
             return this;
         }
 
@@ -177,6 +188,7 @@ public class SmartInventory {
             SmartInventory inv = new SmartInventory(manager);
             inv.id = this.id;
             inv.title = this.title;
+            inv.titleComponent = this.titleComponent;
             inv.type = this.type;
             inv.rows = this.rows;
             inv.columns = this.columns;
