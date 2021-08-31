@@ -1,16 +1,16 @@
 group 'fr.minuskube.inv'
-version '1.2.7'
+version 'LF-1.0'
 
 apply plugin: 'java'
-apply plugin: 'maven'
+apply plugin: 'eclipse'
 apply plugin: 'signing'
 
-sourceCompatibility = 1.8
+sourceCompatibility = 11
 
 javadoc {
     options.links(
-            'https://hub.spigotmc.org/javadocs/spigot/',
-            'https://docs.oracle.com/javase/8/docs/api/'
+            'https://papermc.io/javadocs/paper/1.16/',
+            'https://docs.oracle.com/en/java/javase/11/docs/api/'
     )
 
     options.addStringOption('Xdoclint:none', '-quiet')
@@ -31,12 +31,11 @@ artifacts { archives javadocJar, sourcesJar }
 repositories {
     mavenCentral()
 
-    maven { url 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/' }
-    maven { url 'https://oss.sonatype.org/content/repositories/snapshots' }
+    maven { url 'https://papermc.io/repo/repository/maven-public/' }
 }
 
 dependencies {
-    compileOnly 'org.spigotmc:spigot-api:1.8.8-R0.1-SNAPSHOT'
+    compileOnly 'com.destroystokyo.paper:paper-api:1.16.5-R0.1-SNAPSHOT'
 }
 
 jar {
@@ -45,50 +44,4 @@ jar {
 
 signing {
     sign configurations.archives
-}
-
-uploadArchives {
-    repositories {
-        mavenDeployer {
-            beforeDeployment { MavenDeployment deployment -> signing.signPom(deployment) }
-
-            if(project.hasProperty("ossrhUsername") && project.hasProperty("ossrhPassword")) {
-                repository(url: "https://oss.sonatype.org/service/local/staging/deploy/maven2/") {
-                    authentication(userName: ossrhUsername, password: ossrhPassword)
-                }
-
-                snapshotRepository(url: "https://oss.sonatype.org/content/repositories/snapshots/") {
-                    authentication(userName: ossrhUsername, password: ossrhPassword)
-                }
-            }
-
-            pom.project {
-                name 'SmartInvs'
-                packaging 'jar'
-                description 'Advanced Inventory API for your Minecraft Bukkit plugins.'
-                url 'https://github.com/MinusKube/SmartInvs'
-
-                scm {
-                    connection 'scm:git:git://github.com/MinusKube/SmartInvs.git'
-                    developerConnection 'scm:git:ssh://github.com:MinusKube/SmartInvs.git'
-                    url 'http://github.com/MinusKube/SmartInvs/tree/master'
-                }
-
-                licenses {
-                    license {
-                        name 'GNU General Public License v3.0'
-                        url 'https://www.gnu.org/licenses/gpl-3.0.en.html'
-                    }
-                }
-
-                developers {
-                    developer {
-                        id 'minuskube'
-                        name 'MinusKube'
-                        email 'minuskube@gmail.com'
-                    }
-                }
-            }
-        }
-    }
 }
