@@ -26,6 +26,7 @@ import org.bukkit.scheduler.BukkitRunnable;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -270,15 +271,25 @@ public class InventoryManager {
 
         @Override
         public void run() {
-            new HashMap<>(inventories).forEach((uuid, inv) -> {
+            Iterator<UUID> iterator = inventories.keySet().iterator();
+
+            while (iterator.hasNext()) {
+                UUID uuid = iterator.next();
+                SmartInventory inventory = inventories.get(uuid);
+
                 Player player = Bukkit.getPlayer(uuid);
+                if (player == null) {
+                    iterator.remove();
+                    contents.remove(uuid);
+                    continue;
+                }
 
                 try {
-                    inv.getProvider().update(player, contents.get(uuid));
+                    inventory.getProvider().update(player, contents.get(uuid));
                 } catch (Exception e) {
-                    handleInventoryUpdateError(inv, player, e);
+                    handleInventoryUpdateError(inventory, player, e);
                 }
-            });
+            }
         }
 
     }
