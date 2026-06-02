@@ -1,5 +1,6 @@
 package fr.minuskube.inv;
 
+import com.loverfella.commons.thread.ThreadService;
 import fr.minuskube.inv.content.InventoryContents;
 import fr.minuskube.inv.opener.ChestInventoryOpener;
 import fr.minuskube.inv.opener.InventoryOpener;
@@ -62,7 +63,10 @@ public class InventoryManager {
     public void init() {
         pluginManager.registerEvents(new InvListener(), plugin);
 
-        new InvTask().runTaskTimer(plugin, 1, 1);
+        // Use LoverCraft Commons' platform-agnostic scheduler so the periodic
+        // provider#update loop works on both Paper and Folia/Canvas.
+        Runnable updater = new InvTask();
+        ThreadService.runSyncTimer(plugin, updater, 1L, 1L);
     }
 
     public Optional<InventoryOpener> findOpener(InventoryType type) {
