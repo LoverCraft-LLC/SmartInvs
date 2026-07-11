@@ -6,6 +6,7 @@ import fr.minuskube.inv.opener.InventoryOpener;
 import fr.minuskube.inv.opener.SpecialInventoryOpener;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -137,42 +138,64 @@ public class InventoryManager {
             if (!inventories.containsKey(p.getUniqueId()))
                 return;
 
-            // Restrict putting items from the bottom inventory into the top inventory
-            Inventory clickedInventory = e.getClickedInventory();
-            if (clickedInventory == p.getOpenInventory().getBottomInventory()) {
-                if (e.getAction() == InventoryAction.COLLECT_TO_CURSOR || e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+            SmartInventory inv = inventories.get(p.getUniqueId());
+            Inventory topInventory = p.getOpenInventory().getTopInventory();
+            int topSize = topInventory.getSize();
+
+            // Classify by the authoritative raw slot rather than by inventory object-identity:
+            // getRawSlot() < topSize is a click inside the GUI, otherwise it is the player's own
+            // inventory (or -999 for a click outside the window). This is robust against the object
+            // identity ever mismatching and against a null getClickedInventory().
+            int rawSlot = e.getRawSlot();
+
+            // ---- Click resolved OUTSIDE the GUI (player's own inventory, or -999) ----
+            if (rawSlot < 0 || rawSlot >= topSize) {
+                // Only actions that can pull FROM or push INTO the top GUI are blocked; ordinary
+                // interaction with the player's own inventory is left untouched.
+                InventoryAction action = e.getAction();
+                if (action == InventoryAction.COLLECT_TO_CURSOR
+                        || action == InventoryAction.MOVE_TO_OTHER_INVENTORY
+                        || (action == InventoryAction.NOTHING && e.getClick() != ClickType.MIDDLE)) {
+                    e.setResult(Event.Result.DENY);
                     e.setCancelled(true);
-                    return;
+                    p.updateInventory();
                 }
-  
-                if (e.getAction() == InventoryAction.NOTHING && e.getClick() != ClickType.MIDDLE) {
-                    e.setCancelled(true);
-                    return;
-                }
+                return;
             }
 
-            if (clickedInventory == p.getOpenInventory().getTopInventory()) {
-                e.setCancelled(true);
+            // ---- Click resolved INSIDE the GUI (top inventory): the painted item never moves ----
+            e.setResult(Event.Result.DENY);
+            e.setCancelled(true);
 
-                int row = e.getSlot() / 9;
-                int column = e.getSlot() % 9;
+            int columns = inv.getColumns();
+            int row = rawSlot / columns;
+            int column = rawSlot % columns;
 
-                if (row < 0 || column < 0)
-                    return;
-
-                SmartInventory inv = inventories.get(p.getUniqueId());
-
-                if (row >= inv.getRows() || column >= inv.getColumns())
-                    return;
-
+            if (row >= 0 && column >= 0 && row < inv.getRows() && column < inv.getColumns()) {
                 inv.getListeners().stream()
                         .filter(listener -> listener.getType() == InventoryClickEvent.class)
                         .forEach(listener -> ((InventoryListener<InventoryClickEvent>) listener).accept(e));
 
-                contents.get(p.getUniqueId()).get(row, column).ifPresent(item -> item.run(e));
+                InventoryContents invContents = contents.get(p.getUniqueId());
+                if (invContents != null)
+                    invContents.get(row, column).ifPresent(item -> item.run(e));
 
-                p.updateInventory();
+                // Authoritative re-paint: overwrite the client's view of the clicked slot with the
+                // item the server knows belongs there, so a lag/desync-mispredicted "pickup" cannot
+                // persist as a real grabbed item. Skipped when the click handler opened/replaced the
+                // menu (guard: still the same tracked inventory AND same top inventory) so we never
+                // corrupt a freshly-opened inventory. The slot is RE-READ after the consumer runs so
+                // an in-place slot mutation by the consumer (toggle / counter / claim) is preserved,
+                // not reverted to the pre-click item.
+                if (inventories.get(p.getUniqueId()) == inv
+                        && p.getOpenInventory().getTopInventory() == topInventory) {
+                    InventoryContents current = contents.get(p.getUniqueId());
+                    ClickableItem slotItem = current != null ? current.get(row, column).orElse(null) : null;
+                    topInventory.setItem(rawSlot, slotItem != null ? slotItem.getItem() : null);
+                }
             }
+
+            p.updateInventory();
         }
 
         @EventHandler(priority = EventPriority.LOW)
@@ -184,11 +207,14 @@ public class InventoryManager {
 
             SmartInventory inv = inventories.get(p.getUniqueId());
 
+            int topSize = p.getOpenInventory().getTopInventory().getSize();
             for (int slot : e.getRawSlots()) {
-                if (slot >= p.getOpenInventory().getTopInventory().getSize())
+                if (slot >= topSize)
                     continue;
 
+                e.setResult(Event.Result.DENY);
                 e.setCancelled(true);
+                p.updateInventory();
                 break;
             }
 
