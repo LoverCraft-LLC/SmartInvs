@@ -6,16 +6,11 @@ import fr.minuskube.inv.opener.InventoryOpener;
 import fr.minuskube.inv.opener.SpecialInventoryOpener;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
-import org.bukkit.event.inventory.ClickType;
-import org.bukkit.event.inventory.InventoryAction;
-import org.bukkit.event.inventory.InventoryClickEvent;
-import org.bukkit.event.inventory.InventoryCloseEvent;
-import org.bukkit.event.inventory.InventoryDragEvent;
-import org.bukkit.event.inventory.InventoryOpenEvent;
-import org.bukkit.event.inventory.InventoryType;
+import org.bukkit.event.inventory.*;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.server.PluginDisableEvent;
 import org.bukkit.inventory.Inventory;
@@ -23,14 +18,7 @@ import org.bukkit.plugin.PluginManager;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitRunnable;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.logging.Level;
 
 public class InventoryManager {
@@ -138,42 +126,52 @@ public class InventoryManager {
             if (!inventories.containsKey(p.getUniqueId()))
                 return;
 
-            // Restrict putting items from the bottom inventory into the top inventory
-            Inventory clickedInventory = e.getClickedInventory();
-            if (clickedInventory == p.getOpenInventory().getBottomInventory()) {
-                if (e.getAction() == InventoryAction.COLLECT_TO_CURSOR || e.getAction() == InventoryAction.MOVE_TO_OTHER_INVENTORY) {
+            SmartInventory inv = inventories.get(p.getUniqueId());
+            Inventory topInventory = p.getOpenInventory().getTopInventory();
+            int topSize = topInventory.getSize();
+
+            // Classify by the authoritative raw slot.
+            int rawSlot = e.getRawSlot();
+
+            // Resolve click outside GUI
+            if (rawSlot < 0 || rawSlot >= topSize) {
+                InventoryAction action = e.getAction();
+                if (action == InventoryAction.COLLECT_TO_CURSOR
+                        || action == InventoryAction.MOVE_TO_OTHER_INVENTORY
+                        || (action == InventoryAction.NOTHING && e.getClick() != ClickType.MIDDLE)) {
+                    e.setResult(Event.Result.DENY);
                     e.setCancelled(true);
-                    return;
+                    p.updateInventory();
                 }
-  
-                if (e.getAction() == InventoryAction.NOTHING && e.getClick() != ClickType.MIDDLE) {
-                    e.setCancelled(true);
-                    return;
-                }
+                return;
             }
 
-            if (clickedInventory == p.getOpenInventory().getTopInventory()) {
-                e.setCancelled(true);
+            // Resolve click inside GUI
+            e.setResult(Event.Result.DENY);
+            e.setCancelled(true);
 
-                int row = e.getSlot() / 9;
-                int column = e.getSlot() % 9;
+            int columns = inv.getColumns();
+            int row = rawSlot / columns;
+            int column = rawSlot % columns;
 
-                if (row < 0 || column < 0)
-                    return;
-
-                SmartInventory inv = inventories.get(p.getUniqueId());
-
-                if (row >= inv.getRows() || column >= inv.getColumns())
-                    return;
-
+            if (row >= 0 && column >= 0 && row < inv.getRows() && column < inv.getColumns()) {
                 inv.getListeners().stream()
                         .filter(listener -> listener.getType() == InventoryClickEvent.class)
                         .forEach(listener -> ((InventoryListener<InventoryClickEvent>) listener).accept(e));
 
-                contents.get(p.getUniqueId()).get(row, column).ifPresent(item -> item.run(e));
+                InventoryContents invContents = contents.get(p.getUniqueId());
+                if (invContents != null)
+                    invContents.get(row, column).ifPresent(item -> item.run(e));
 
-                p.updateInventory();
+                if (inventories.get(p.getUniqueId()) == inv
+                        && p.getOpenInventory().getTopInventory() == topInventory) {
+                    InventoryContents current = contents.get(p.getUniqueId());
+                    ClickableItem slotItem = current != null ? current.get(row, column).orElse(null) : null;
+                    topInventory.setItem(rawSlot, slotItem != null ? slotItem.getItem() : null);
+                }
             }
+
+            p.updateInventory();
         }
 
         @EventHandler(priority = EventPriority.LOW)
@@ -185,11 +183,14 @@ public class InventoryManager {
 
             SmartInventory inv = inventories.get(p.getUniqueId());
 
+            int topSize = p.getOpenInventory().getTopInventory().getSize();
             for (int slot : e.getRawSlots()) {
-                if (slot >= p.getOpenInventory().getTopInventory().getSize())
+                if (slot >= topSize)
                     continue;
 
+                e.setResult(Event.Result.DENY);
                 e.setCancelled(true);
+                p.updateInventory();
                 break;
             }
 
