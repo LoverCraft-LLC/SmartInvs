@@ -46,7 +46,9 @@ public class SmartInventory {
                     .forEach(listener -> ((InventoryListener<InventoryCloseEvent>) listener)
                             .accept(new InventoryCloseEvent(player.getOpenInventory())));
 
-            this.manager.setInventory(player, null);
+            // The player is not leaving this screen, they are moving to the next one — an
+            // observer needs to tell those apart before calling a screen abandoned.
+            this.manager.setInventory(player, null, MenuCloseReason.NAVIGATED);
         });
 
         InventoryContents contents = new InventoryContents.Impl(this, player.getUniqueId());
@@ -75,14 +77,25 @@ public class SmartInventory {
         }
     }
 
-    @SuppressWarnings("unchecked")
     public void close(Player player) {
+        close(player, MenuCloseReason.CLOSED);
+    }
+
+    /**
+     * Closes this inventory for the player, telling any registered
+     * {@link InventoryObserver} why.
+     *
+     * @param player the player to close the inventory for, must not be null
+     * @param reason why the inventory is being closed
+     */
+    @SuppressWarnings("unchecked")
+    public void close(Player player, MenuCloseReason reason) {
         listeners.stream()
                 .filter(listener -> listener.getType() == InventoryCloseEvent.class)
                 .forEach(listener -> ((InventoryListener<InventoryCloseEvent>) listener)
                         .accept(new InventoryCloseEvent(player.getOpenInventory())));
 
-        this.manager.setInventory(player, null);
+        this.manager.setInventory(player, null, reason);
         player.closeInventory();
 
         this.manager.setContents(player, null);

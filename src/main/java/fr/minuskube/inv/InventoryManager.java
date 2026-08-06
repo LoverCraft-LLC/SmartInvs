@@ -32,6 +32,8 @@ public class InventoryManager {
     private List<InventoryOpener> defaultOpeners;
     private List<InventoryOpener> openers;
 
+    private InventoryObserver observer = InventoryObserver.NOOP;
+
     public InventoryManager(JavaPlugin plugin) {
         this.plugin = plugin;
         this.pluginManager = Bukkit.getPluginManager();
@@ -86,11 +88,46 @@ public class InventoryManager {
         return Optional.ofNullable(this.inventories.get(p.getUniqueId()));
     }
 
+    /**
+     * Registers the witness notified whenever an inventory this manager owns is opened, clicked
+     * or closed. There is one observer per manager; registering replaces the previous one.
+     *
+     * @param observer the observer to notify, or null to go back to {@link InventoryObserver#NOOP}
+     */
+    public void setObserver(InventoryObserver observer) {
+        this.observer = observer == null ? InventoryObserver.NOOP : observer;
+    }
+
+    /**
+     * @return the currently registered observer, never null
+     */
+    public InventoryObserver getObserver() {
+        return this.observer;
+    }
+
     protected void setInventory(Player p, SmartInventory inv) {
-        if (inv == null)
-            this.inventories.remove(p.getUniqueId());
-        else
+        setInventory(p, inv, MenuCloseReason.CLOSED);
+    }
+
+    /**
+     * The single writer of the inventory map, in both directions — every open and every close
+     * goes through here, which is what makes {@link InventoryObserver}'s open/close pairing a
+     * guarantee rather than a hope. The reason is only consulted when clearing.
+     *
+     * @param p      the player whose current inventory is being set or cleared
+     * @param inv    the inventory now on screen, or null to clear
+     * @param reason why the inventory is being cleared; ignored when {@code inv} is not null
+     */
+    protected void setInventory(Player p, SmartInventory inv, MenuCloseReason reason) {
+        if (inv == null) {
+            SmartInventory previous = this.inventories.remove(p.getUniqueId());
+
+            if (previous != null)
+                this.observer.onMenuClose(p.getUniqueId(), previous, reason);
+        } else {
             this.inventories.put(p.getUniqueId(), inv);
+            this.observer.onMenuOpen(p.getUniqueId(), inv);
+        }
     }
 
     public Optional<InventoryContents> getContents(Player p) {
@@ -155,6 +192,8 @@ public class InventoryManager {
             int column = rawSlot % columns;
 
             if (row >= 0 && column >= 0 && row < inv.getRows() && column < inv.getColumns()) {
+                observer.onMenuClick(p.getUniqueId(), inv);
+
                 inv.getListeners().stream()
                         .filter(listener -> listener.getType() == InventoryClickEvent.class)
                         .forEach(listener -> ((InventoryListener<InventoryClickEvent>) listener).accept(e));
@@ -229,8 +268,11 @@ public class InventoryManager {
             if (inv.isCloseable()) {
                 e.getInventory().clear();
 
-                inventories.remove(p.getUniqueId());
-                contents.remove(p.getUniqueId());
+                // Routed through setInventory/setContents rather than touching the maps directly
+                // so this — the common close path — stays behind the single writer the observer
+                // contract depends on. Behaviour is identical: both calls clear the same entries.
+                setInventory(p, null, MenuCloseReason.CLOSED);
+                setContents(p, null);
             } else
                 Bukkit.getScheduler().runTask(plugin, () -> p.openInventory(e.getInventory()));
         }
@@ -248,18 +290,28 @@ public class InventoryManager {
                     .filter(listener -> listener.getType() == PlayerQuitEvent.class)
                     .forEach(listener -> ((InventoryListener<PlayerQuitEvent>) listener).accept(e));
 
-            inventories.remove(p.getUniqueId());
-            contents.remove(p.getUniqueId());
+            setInventory(p, null, MenuCloseReason.QUIT);
+            setContents(p, null);
         }
 
         @EventHandler(priority = EventPriority.LOW)
         public void onPluginDisable(PluginDisableEvent e) {
-            new HashMap<>(inventories).forEach((player, inv) -> {
+            new HashMap<>(inventories).forEach((uuid, inv) -> {
                 inv.getListeners().stream()
                         .filter(listener -> listener.getType() == PluginDisableEvent.class)
                         .forEach(listener -> ((InventoryListener<PluginDisableEvent>) listener).accept(e));
 
-                inv.close(Bukkit.getPlayer(player));
+                Player player = Bukkit.getPlayer(uuid);
+
+                if (player != null) {
+                    inv.close(player, MenuCloseReason.DISABLE);
+                } else {
+                    // Nobody to close an inventory for; drop the entry ourselves so the observer
+                    // still sees the close (SmartInventory.close would NPE on a null player).
+                    inventories.remove(uuid);
+                    contents.remove(uuid);
+                    observer.onMenuClose(uuid, inv, MenuCloseReason.DISABLE);
+                }
             });
 
             inventories.clear();
@@ -282,6 +334,10 @@ public class InventoryManager {
                 if (player == null) {
                     iterator.remove();
                     contents.remove(uuid);
+                    // Fourth exit from the map, and the only one with no Player left to hand over:
+                    // the player went offline without this manager seeing a close or a quit. Still
+                    // a close as far as an observer is concerned, or the pairing would leak.
+                    observer.onMenuClose(uuid, inventory, MenuCloseReason.QUIT);
                     continue;
                 }
 
