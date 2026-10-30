@@ -51,7 +51,7 @@ public class SmartInventory {
             this.manager.setInventory(player, null, MenuCloseReason.NAVIGATED);
         });
 
-        InventoryContents contents = new InventoryContents.Impl(this, player.getUniqueId());
+        InventoryContents.Impl contents = new InventoryContents.Impl(this, player.getUniqueId());
         contents.pagination().page(page);
 
         this.manager.setContents(player, contents);
@@ -67,6 +67,7 @@ public class SmartInventory {
             InventoryOpener opener = this.manager.findOpener(type)
                     .orElseThrow(() -> new IllegalStateException("No opener found for the inventory type " + type.name()));
             Inventory handle = opener.open(this, player);
+            contents.setHandle(handle);
 
             this.manager.setInventory(player, this);
 
