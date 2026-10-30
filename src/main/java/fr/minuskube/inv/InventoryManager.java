@@ -141,6 +141,13 @@ public class InventoryManager {
             this.contents.put(p.getUniqueId(), contents);
     }
 
+    /**
+     * @return the inventory the player's current menu was opened in, or null if there is none
+     */
+    private Inventory handleOf(Player p) {
+        return this.contents.get(p.getUniqueId()) instanceof InventoryContents.Impl impl ? impl.getHandle() : null;
+    }
+
     public void handleInventoryOpenError(SmartInventory inventory, Player player, Exception exception) {
         inventory.close(player);
 
@@ -206,7 +213,13 @@ public class InventoryManager {
                         && p.getOpenInventory().getTopInventory() == topInventory) {
                     InventoryContents current = contents.get(p.getUniqueId());
                     ClickableItem slotItem = current != null ? current.get(row, column).orElse(null) : null;
-                    topInventory.setItem(rawSlot, slotItem != null ? slotItem.getItem() : null);
+
+                    // Repaint the menu's own inventory, not the one on top: after a refused open the
+                    // player is still registered here while a real container is up, and painting
+                    // the tile into that container's slot made it a real item.
+                    Inventory handle = handleOf(p);
+                    if (handle != null && rawSlot < handle.getSize())
+                        handle.setItem(rawSlot, slotItem != null ? slotItem.getItem() : null);
                 }
             }
 
@@ -265,16 +278,23 @@ public class InventoryManager {
                     .filter(listener -> listener.getType() == InventoryCloseEvent.class)
                     .forEach(listener -> ((InventoryListener<InventoryCloseEvent>) listener).accept(e));
 
+            // The closing inventory is not always the menu: a refused open leaves the player
+            // registered while a real container is up, and clearing that one wiped real items.
+            Inventory handle = handleOf(p);
+
             if (inv.isCloseable()) {
-                e.getInventory().clear();
+                if (handle != null)
+                    handle.clear();
 
                 // Routed through setInventory/setContents rather than touching the maps directly
                 // so this — the common close path — stays behind the single writer the observer
                 // contract depends on. Behaviour is identical: both calls clear the same entries.
                 setInventory(p, null, MenuCloseReason.CLOSED);
                 setContents(p, null);
-            } else
-                Bukkit.getScheduler().runTask(plugin, () -> p.openInventory(e.getInventory()));
+            } else {
+                Inventory reopen = handle != null ? handle : e.getInventory();
+                Bukkit.getScheduler().runTask(plugin, () -> p.openInventory(reopen));
+            }
         }
 
         @EventHandler(priority = EventPriority.LOW)

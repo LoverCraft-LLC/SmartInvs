@@ -57,6 +57,7 @@ public interface InventoryContents {
         private UUID player;
 
         private ClickableItem[][] contents;
+        private Inventory handle;
 
         private Pagination pagination = new Pagination.Impl();
         private Map<String, SlotIterator> iterators = new HashMap<>();
@@ -70,6 +71,13 @@ public interface InventoryContents {
 
         @Override
         public SmartInventory inventory() { return inv; }
+
+        /**
+         * @return the inventory the opener created for this open, or null before it exists
+         */
+        public Inventory getHandle() { return handle; }
+
+        public void setHandle(Inventory handle) { this.handle = handle; }
 
         @Override
         public Pagination pagination() { return pagination; }
@@ -243,8 +251,13 @@ public interface InventoryContents {
             if(!inv.getManager().getOpenedPlayers(inv).contains(currentPlayer))
                 return;
 
-            Inventory topInventory = currentPlayer.getOpenInventory().getTopInventory();
-            topInventory.setItem(inv.getColumns() * row + column, item);
+            // Only ever this open's own inventory, never whatever is on top. A refused open still
+            // registers the player, and a late or async render then painted its tiles into the
+            // screen that stayed up, which can be a real container.
+            if (handle == null)
+                return;
+
+            handle.setItem(inv.getColumns() * row + column, item);
         }
 
     }
